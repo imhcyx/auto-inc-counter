@@ -14,35 +14,35 @@ endmodule
 
 module counter_64(
     input           cnt_clk,
-    input           cnt_rst,
+    input           cnt_resetn,
     output  [63:0]  cnt,
-    input           aclk,
-    input           aresetn,
-    input           arvalid,
-    output          arready,
-    input   [11:0]  araddr,
-    input   [2 :0]  arprot,
-    output          rvalid,
-    input           rready,
-    output  [1 :0]  rresp,
-    output  [63:0]  rdata,
-    input           awvalid,
-    output          awready,
-    input   [11:0]  awaddr,
-    input   [2 :0]  awprot,
-    input           wvalid,
-    output          wready,
-    input   [63:0]  wdata,
-    input   [7 :0]  wstrb,
-    output          bvalid,
-    input           bready,
-    output  [1 :0]  bresp
+    input           s_axi_aclk,
+    input           s_axi_aresetn,
+    input           s_axi_arvalid,
+    output          s_axi_arready,
+    input   [11:0]  s_axi_araddr,
+    input   [2 :0]  s_axi_arprot,
+    output          s_axi_rvalid,
+    input           s_axi_rready,
+    output  [1 :0]  s_axi_rresp,
+    output  [63:0]  s_axi_rdata,
+    input           s_axi_awvalid,
+    output          s_axi_awready,
+    input   [11:0]  s_axi_awaddr,
+    input   [2 :0]  s_axi_awprot,
+    input           s_axi_wvalid,
+    output          s_axi_wready,
+    input   [63:0]  s_axi_wdata,
+    input   [7 :0]  s_axi_wstrb,
+    output          s_axi_bvalid,
+    input           s_axi_bready,
+    output  [1 :0]  s_axi_bresp
 );
 
     reg [63:0] cnt_r;
 
     always @(posedge cnt_clk) begin
-        if (cnt_rst) cnt_r <= 64'd0;
+        if (!cnt_resetn) cnt_r <= 64'd0;
         else cnt_r <= cnt_r + 64'd1;
     end
 
@@ -50,26 +50,26 @@ module counter_64(
 
     // axi stuff
 
-    wire ar_fire = arvalid && arready;
-    wire r_fire = rvalid && rready;
-    wire aw_fire = awvalid && awready;
-    wire w_fire = wvalid && wready;
-    wire b_fire = bvalid && bready;
+    wire ar_fire = s_axi_arvalid && s_axi_arready;
+    wire r_fire = s_axi_rvalid && s_axi_rready;
+    wire aw_fire = s_axi_awvalid && s_axi_awready;
+    wire w_fire = s_axi_wvalid && s_axi_wready;
+    wire b_fire = s_axi_bvalid && s_axi_bready;
 
     reg r_inflight, w_inflight;
 
-    always @(posedge aclk) begin
-        if (!aresetn) r_inflight <= 1'b0;
+    always @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn) r_inflight <= 1'b0;
         else r_inflight <= r_inflight ^ ar_fire ^ r_fire;
     end
 
-    always @(posedge aclk) begin
-        if (!aresetn) w_inflight <= 1'b0;
+    always @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn) w_inflight <= 1'b0;
         else w_inflight <= w_inflight ^ aw_fire ^ b_fire;
     end
 
-    assign arready = !r_inflight;
-    assign awready = !w_inflight;
+    assign s_axi_arready = !r_inflight;
+    assign s_axi_awready = !w_inflight;
 
     // read over axi
 
@@ -79,50 +79,50 @@ module counter_64(
     reg [63:0] data_a, data_c; // A, C
     wire data_req_c, data_ack_a;
 
-    scalar_sync u_req_sync(.clk_dst(cnt_clk),   .src(data_req),     .dst(data_req_c));
-    scalar_sync u_ack_sync(.clk_dst(aclk),      .src(data_ack),     .dst(data_ack_a));
+    scalar_sync u_req_sync(.clk_dst(cnt_clk),       .src(data_req),     .dst(data_req_c));
+    scalar_sync u_ack_sync(.clk_dst(s_axi_aclk),    .src(data_ack),     .dst(data_ack_a));
 
-    always @(posedge aclk) begin
-        if (!aresetn)                       data_req <= 1'b0;
+    always @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn)                 data_req <= 1'b0;
         else if (data_ack_a)                data_req <= 1'b0;
         else if (ar_fire)                   data_req <= 1'b1;
     end
 
     always @(posedge cnt_clk) begin
-        if (cnt_rst)                        data_c <= 64'd0;
+        if (!cnt_resetn)                        data_c <= 64'd0;
         else if (data_req_c && !data_ack)   data_c <= cnt_r;
     end
 
     always @(posedge cnt_clk) begin
-        if (cnt_rst)                        data_ack <= 1'b0;
+        if (!cnt_resetn)                        data_ack <= 1'b0;
         else                                data_ack <= data_req_c;
     end
 
-    always @(posedge aclk) begin
-        if (!aresetn)                       data_a <= 64'd0;
+    always @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn)                 data_a <= 64'd0;
         else if (data_ack_a && data_req)    data_a <= data_c;
     end
 
     reg [1:0] data_ack_a_scan;
-    always @(posedge aclk) begin
+    always @(posedge s_axi_aclk) begin
         data_ack_a_scan <= {data_ack_a_scan[0], data_ack_a};
     end
 
     reg rvalid_r;
-    always @(posedge aclk) begin
-        if (!aresetn)                       rvalid_r <= 1'b0;
+    always @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn)                 rvalid_r <= 1'b0;
         else if (r_fire)                    rvalid_r <= 1'b0;
         else if (data_ack_a_scan == 2'b10)  rvalid_r <= 1'b1;
     end
 
-    assign rvalid = rvalid_r;
-    assign rdata = data_a;
-    assign rresp = 2'd0;
+    assign s_axi_rvalid = rvalid_r;
+    assign s_axi_rdata = data_a;
+    assign s_axi_rresp = 2'd0;
 
     // ignore writes
 
-    assign wready = 1'b1;
-    assign bvalid = w_inflight;
-    assign bresp = 2'd0;
+    assign s_axi_wready = 1'b1;
+    assign s_axi_bvalid = w_inflight;
+    assign s_axi_bresp = 2'd0;
 
 endmodule
